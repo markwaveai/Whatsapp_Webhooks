@@ -53,9 +53,18 @@ CACHE_INDEX = os.getenv("ELASTICSEARCH_CACHE_INDEX", "whatsapp_group_names")
 USERS_INDEX = "users"
 
 if ES_USER and ES_PASSWORD:
-    es = Elasticsearch([ES_HOST], basic_auth=(ES_USER, ES_PASSWORD))
+    es = Elasticsearch(
+        [ES_HOST],
+        basic_auth=(ES_USER, ES_PASSWORD),
+        verify_certs=False,
+        ssl_show_warn=False
+    )
 else:
-    es = Elasticsearch([ES_HOST])
+    es = Elasticsearch(
+        [ES_HOST],
+        verify_certs=False,
+        ssl_show_warn=False
+    )
 
 # Auth Setup
 JWT_SECRET = os.getenv("JWT_SECRET", "supersecret")
