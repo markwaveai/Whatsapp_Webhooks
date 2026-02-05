@@ -755,6 +755,12 @@ async def process_webhook_message(event: str, data: dict):
                 print(f"Error processing mentions: {e}")
         # Index to Elasticsearch
         try:
+            ES_INDEX = os.environ["ELASTICSEARCH_INDEX"]
+            es.index(
+                index=ES_INDEX,
+                document=data
+            )
+
             msg_id = doc.get('message_id') or doc.get('id')
             if msg_id:
                 es.index(index=INDEX_NAME, id=msg_id, document=doc)
@@ -995,3 +1001,6 @@ if os.getenv("CACHE_ON_STARTUP", "false").lower() == "true":
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, log_level="debug")
+
+
+
