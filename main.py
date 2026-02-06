@@ -45,7 +45,7 @@ if not PERISKOPE_API_KEY or not PERISKOPE_ORG_PHONE:
     print("WARNING: PERISKOPE_API_KEY or PERISKOPE_ORG_PHONE not set. Chat name enrichment will be disabled.")
 
 # Elasticsearch setup
-ES_HOST = os.getenv("ELASTICSEARCH_HOST", "http://localhost:9200")
+ES_HOST = os.getenv("ELASTICSEARCH_HOST") or "http://localhost:9200"
 ES_USER = os.getenv("ELASTICSEARCH_USER")
 ES_PASSWORD = os.getenv("ELASTICSEARCH_PASSWORD")
 INDEX_NAME = os.getenv("ELASTICSEARCH_INDEX", "whatsapp_messages")
@@ -764,12 +764,6 @@ async def process_webhook_message(event: str, data: dict):
                 print(f"Error processing mentions: {e}")
         # Index to Elasticsearch
         try:
-            ES_INDEX = os.environ["ELASTICSEARCH_INDEX"]
-            es.index(
-                index=ES_INDEX,
-                document=data
-            )
-
             msg_id = doc.get('message_id') or doc.get('id')
             if msg_id:
                 es.index(index=INDEX_NAME, id=msg_id, document=doc)
@@ -838,7 +832,9 @@ async def post_whatsapp_ai_processed_data(payload: dict = Body(...)):
                     "class": payload.get("class"),
                     "confidence": payload.get("confidence"),
                     "pond_name": payload.get("pond_name"),
-                    "data": payload.get("data")
+                    "data": payload.get("data"),
+                    "chat_id": payload.get("group_id") or payload.get("chat_id"),
+                    "chat_name": payload.get("group_name") or payload.get("chat_name")
                 }
                 es.update(index=INDEX_NAME, id=msg_id, doc=update_doc, doc_as_upsert=True)
                 print(f"Data updated in Elasticsearch with AI processed data (id={msg_id})")
