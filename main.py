@@ -833,9 +833,23 @@ async def post_whatsapp_ai_processed_data(payload: dict = Body(...)):
                     "confidence": payload.get("confidence"),
                     "pond_name": payload.get("pond_name"),
                     "data": payload.get("data"),
-                    "chat_id": payload.get("group_id") or payload.get("chat_id"),
-                    "chat_name": payload.get("group_name") or payload.get("chat_name")
                 }
+                
+                # Extract chat ID and Name
+                chat_id = payload.get("group_id") or payload.get("chat_id")
+                chat_name = payload.get("group_name") or payload.get("chat_name")
+
+                # If chat_name is missing or looks like an ID (contains @ or is purely numeric) or equals chat_id
+                # Then try to fetch the real name from cache/API
+                if chat_id and (not chat_name or chat_name == chat_id or '@' in chat_name or chat_name.isdigit()):
+                    resolved_name = get_chat_name(chat_id)
+                    # Only overwrite if we got a different name (and certainly if resolved_name is not just the ID again)
+                    if resolved_name and resolved_name != chat_id:
+                        chat_name = resolved_name
+                        print(f"Resolved chat name for {chat_id}: {chat_name}")
+                
+                update_doc["chat_id"] = chat_id
+                update_doc["chat_name"] = chat_name
                 es.update(index=INDEX_NAME, id=msg_id, doc=update_doc, doc_as_upsert=True)
                 print(f"Data updated in Elasticsearch with AI processed data (id={msg_id})")
             else:
