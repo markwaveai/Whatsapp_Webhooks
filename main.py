@@ -237,6 +237,7 @@ def get_chat_name(chat_id: str) -> str:
             
             # Extract chat/group name
             chat_name = data.get("chat_name", chat_id)
+            print(f"API Response for {chat_id}: {json.dumps(data)}") # Log full response for debugging
             print(f"Fetched chat name from API for {chat_id}: {chat_name}")
             
             # Save chat name to Elasticsearch cache
@@ -256,10 +257,12 @@ def get_chat_name(chat_id: str) -> str:
             
             return chat_name
         else:
-            print(f"Failed to fetch chat name for {chat_id}: {response.status_code}")
+            print(f"Failed to fetch chat name for {chat_id}: Status {response.status_code}, Body: {response.text}")
             return chat_id
     except Exception as e:
         print(f"Error fetching chat name for {chat_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return chat_id
 
 def bulk_fetch_and_cache_groups() -> dict:
