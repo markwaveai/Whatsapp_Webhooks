@@ -107,7 +107,7 @@ async def receive_neckband_alert(
         )
 
     # Send notifications
-    background_tasks.add_task(send_neckband_notifications, payload)
+    #background_tasks.add_task(send_neckband_notifications, payload)
 
     return {
         "status": "success",
