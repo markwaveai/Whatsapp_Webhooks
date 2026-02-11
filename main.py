@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Header
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import re
@@ -32,39 +32,21 @@ app.add_middleware(
 )
 
 
-SIGNING_SECRET = os.getenv("PERISKOPE_SIGNING_SECRET")
-if not SIGNING_SECRET:
-    raise ValueError("PERISKOPE_SIGNING_SECRET environment variable is required")
-
 # Periskope API setup
-PERISKOPE_API_KEY = os.getenv("PERISKOPE_API_KEY")
-PERISKOPE_ORG_PHONE = os.getenv("PERISKOPE_ORG_PHONE")
-PERISKOPE_API_BASE_URL = "https://api.periskope.app/v1/"
+from db_client import (
+    es, 
+    PERISKOPE_API_KEY, 
+    PERISKOPE_ORG_PHONE, 
+    PERISKOPE_API_BASE_URL,
+    ES_HOST, ES_USER, ES_PASSWORD,
+    INDEX_NAME, CACHE_INDEX, USERS_INDEX
+)
+import neckband_router
 
+# Check if keys are loaded (optional, just for logging as in original)
 if not PERISKOPE_API_KEY or not PERISKOPE_ORG_PHONE:
     print("WARNING: PERISKOPE_API_KEY or PERISKOPE_ORG_PHONE not set. Chat name enrichment will be disabled.")
 
-# Elasticsearch setup
-ES_HOST = os.getenv("ELASTICSEARCH_HOST") or "http://localhost:9200"
-ES_USER = os.getenv("ELASTICSEARCH_USER")
-ES_PASSWORD = os.getenv("ELASTICSEARCH_PASSWORD")
-INDEX_NAME = os.getenv("ELASTICSEARCH_INDEX", "whatsapp_messages")
-CACHE_INDEX = os.getenv("ELASTICSEARCH_CACHE_INDEX", "whatsapp_group_names")
-USERS_INDEX = "users"
-
-if ES_USER and ES_PASSWORD:
-    es = Elasticsearch(
-        [ES_HOST],
-        basic_auth=(ES_USER, ES_PASSWORD),
-        verify_certs=False,
-        ssl_show_warn=False
-    )
-else:
-    es = Elasticsearch(
-        [ES_HOST],
-        verify_certs=False,
-        ssl_show_warn=False
-    )
 
 # Auth Setup
 JWT_SECRET = os.getenv("JWT_SECRET", "supersecret")
@@ -1001,6 +983,13 @@ async def update_ocr_table(payload: dict, current_user: str = Depends(get_curren
     except Exception as e:
         print(f"Error updating OCR table to Elasticsearch: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to update OCR table: {str(e)}")
+#create Reast api to store the json data in elastic with index ELASTICSEARCH_NECKBAND_INDEX=neckband_alerts
+
+
+
+app.include_router(neckband_router.router)
+
+
 
 # Optional: Pre-populate cache on startup
 # Set CACHE_ON_STARTUP=true in .env to enable
