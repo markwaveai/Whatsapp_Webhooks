@@ -75,7 +75,7 @@ def send_neckband_notifications(payload: dict):
 async def receive_neckband_alert(
     background_tasks: BackgroundTasks,
     payload: dict = Body(...),
-    x_token: str = Header(None, alias="X-Neckband-Token")
+    x_token: str = Header(None, alias="X-API-Token")
 ):
     # Debug logging
     print(f"Neckband Alert Request. Token provided: {x_token is not None}")
