@@ -1,6 +1,7 @@
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Depends, Body
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel
 import re
 import hmac
 import hashlib
@@ -16,9 +17,45 @@ import random
 import string
 import time
 from fastapi.security import OAuth2PasswordBearer
-from fastapi import Depends, Body
+import pydantic
 
 load_dotenv()
+
+# --- Configuration for WhatsApp OTP Apps ---
+TRUEHARVESTAPP = "trueharvest"
+ANIMALKARTAPP = "animalkart"
+FARMVESTAPP = "farmvest"
+
+APP_CONFIG = {
+    ANIMALKARTAPP: {
+        "token": os.getenv("META_ACCESS_TOKEN_ANIMALKART"),
+        "phone_id": os.getenv("META_PHONE_NUMBER_ID_ANIMALKART"),
+        "template": os.getenv("META_OTP_TEMPLATE_ANIMALKART", "otp_app"),
+    },
+    TRUEHARVESTAPP: {
+        "token": os.getenv("META_ACCESS_TOKEN_TRUEHARVEST"),
+        "phone_id": os.getenv("META_PHONE_NUMBER_ID_TRUEHARVEST"),
+        "template": os.getenv("META_OTP_TEMPLATE_TRUEHARVEST", "otp_app"),
+    },
+    FARMVESTAPP: {
+        "token": os.getenv("META_ACCESS_TOKEN_FARMVEST"),
+        "phone_id": os.getenv("META_PHONE_NUMBER_ID_FARMVEST"),
+        "template": os.getenv("META_OTP_TEMPLATE_FARMVEST", "otp_app"),
+    }
+}
+
+class WhatsAppOTPRequest(BaseModel):
+    mobile: str
+    appName: str  # 'animalkart', 'trueharvest', or 'farmvest'
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+
+class WhatsAppOTPResponse(BaseModel):
+    statuscode: int
+    status: str
+    message: str
+    otp: Optional[str] = None
+    user: Optional[Dict[str, Any]] = None
 
 app = FastAPI()
 
@@ -51,6 +88,10 @@ ES_PASSWORD = os.getenv("ELASTICSEARCH_PASSWORD")
 INDEX_NAME = os.getenv("ELASTICSEARCH_INDEX", "whatsapp_messages")
 CACHE_INDEX = os.getenv("ELASTICSEARCH_CACHE_INDEX", "whatsapp_group_names")
 USERS_INDEX = "users"
+
+# Meta Webhook Config
+META_VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN", "markwave_verify_safe")
+META_APP_SECRET = os.getenv("META_APP_SECRET")
 
 if ES_USER and ES_PASSWORD:
     es = Elasticsearch(
@@ -338,6 +379,97 @@ def bulk_fetch_and_cache_groups() -> dict:
 @app.get("/")
 async def root():
     return {"message": "Webhook server is running"}
+
+def send_meta_whatsapp_otp(mobile: str, otp: str, app_name: str):
+    """
+    Sends WhatsApp OTP using Meta Cloud API
+    """
+    config = APP_CONFIG.get(app_name.lower())
+    if not config or not config["token"] or not config["phone_id"]:
+        print(f"Error: Credentials missing for app {app_name}")
+        return {"status": "error", "message": f"Credentials missing for {app_name}"}
+
+    token = config["token"]
+    phone_id = config["phone_id"]
+    template_name = config["template"]
+    
+    url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
+    
+    # Format phone number for International format without '+'
+    clean_mobile = re.sub(r'\D', '', mobile)
+    if len(clean_mobile) == 10:
+        clean_mobile = "91" + clean_mobile
+    
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": clean_mobile,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": "en"},
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [{"type": "text", "text": otp}]
+                },
+                {
+                    "type": "button",
+                    "sub_type": "url",
+                    "index": "0",
+                    "parameters": [{"type": "text", "text": otp}]
+                }
+            ]
+        }
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        return response.json()
+    except Exception as e:
+        print(f"Error sending Meta OTP: {str(e)}")
+        return {"result": False, "message": str(e)}
+
+@app.post("/send-whatsapp-otp", response_model=WhatsAppOTPResponse)
+async def send_whatsapp_otp_endpoint(request: WhatsAppOTPRequest):
+    app_name = request.appName.lower()
+    if app_name not in APP_CONFIG:
+        return WhatsAppOTPResponse(
+            statuscode=400,
+            status="error",
+            message=f"Unsupported app: {app_name}",
+            user={}
+        )
+    
+    otp = generate_otp()
+    # Store OTP for verification later (reusing existing otp_store logic)
+    otp_store[request.mobile] = {
+        "otp": otp,
+        "expires": time.time() + 300
+    }
+    
+    # Send OTP
+    result = send_meta_whatsapp_otp(request.mobile, otp, app_name)
+    
+    if "error" in result:
+        return WhatsAppOTPResponse(
+            statuscode=500,
+            status="error",
+            message=f"Failed to send OTP: {result.get('error', {}).get('message', 'Unknown error')}",
+            user={}
+        )
+    
+    return WhatsAppOTPResponse(
+        statuscode=200,
+        status="success",
+        message="OTP sent successfully",
+        otp=otp, # In prod, maybe don't return OTP in response body
+        user={"mobile": request.mobile, "appName": app_name}
+    )
 
 @app.get("/refresh-cache")
 async def refresh_cache():
@@ -795,6 +927,80 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
     if event in ["message.created", "message.ack.updated"] and data:
         # Offload heavy processing to background task to avoid timeout
         background_tasks.add_task(process_webhook_message, event, data)
+
+    return {"status": "ok"}
+
+# --- Meta Webhook Support ---
+
+@app.get("/meta-webhook")
+async def verify_meta_webhook(request: Request):
+    """
+    Handles Meta's webhook verification challenge (GET)
+    """
+    params = request.query_params
+    mode = params.get("hub.mode")
+    token = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
+
+    if mode == "subscribe" and token == META_VERIFY_TOKEN:
+        print("Webhook verified successfully!")
+        from fastapi.responses import Response
+        return Response(content=challenge, media_type="text/plain")
+    
+    print(f"Verification failed: mode={mode}, token={token}")
+    raise HTTPException(status_code=403, detail="Verification failed")
+
+def verify_meta_signature(raw_body: bytes, signature: str) -> bool:
+    """
+    Verifies Meta's X-Hub-Signature-256 header using META_APP_SECRET
+    SKIP: Explicitly skipping for now as requested by user.
+    """
+    # Simply log and return True for now
+    if signature:
+        print(f"Meta signature received but skipping verification: {signature}")
+    return True
+
+@app.post("/meta-webhook")
+async def meta_webhook_events(request: Request, background_tasks: BackgroundTasks):
+    """
+    Handles incoming message events from Meta (POST)
+    """
+    raw_body = await request.body()
+    signature = request.headers.get("X-Hub-Signature-256")
+    
+    if not verify_meta_signature(raw_body, signature):
+        print("Invalid Meta signature")
+        # raise HTTPException(status_code=401, detail="Invalid signature")
+
+    try:
+        payload = json.loads(raw_body)
+        print(f"Received Meta Webhook: {json.dumps(payload)}")
+        
+        # Meta's structure is deeply nested: entry -> changes -> value -> messages
+        # We can map this to our process_webhook_message logic
+        entries = payload.get("entry", [])
+        for entry in entries:
+            for change in entry.get("changes", []):
+                value = change.get("value", {})
+                if "messages" in value:
+                    for message in value.get("messages", []):
+                        # Extract basic info
+                        data = {
+                            "chat_id": message.get("from"),
+                            "sender_phone": message.get("from"),
+                            "message_id": message.get("id"),
+                            "timestamp": message.get("timestamp"),
+                            "type": message.get("type")
+                        }
+                        
+                        if message.get("type") == "text":
+                            data["body"] = message.get("text", {}).get("body")
+                        
+                        # Process in background like Periskope
+                        background_tasks.add_task(process_webhook_message, "message.created", data)
+
+    except Exception as e:
+        print(f"Error processing Meta webhook: {str(e)}")
 
     return {"status": "ok"}
 
