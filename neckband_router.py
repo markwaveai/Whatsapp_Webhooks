@@ -55,21 +55,15 @@ def send_whatsapp_alert(target: str, text: str):
         return False
 
 def send_neckband_notifications(payload: dict):
-    # Format message
-    message = "🚨 *Neckband Alert*\n\n"
-    for k, v in payload.items():
-        if k not in ["timestamp", "event_type"]: # skip internal fields if desired
-            message += f"*{k}*: {v}\n"
-    
-    # Add timestamp if present
-    if "timestamp" in payload:
-        message += f"\n_Time: {payload['timestamp']}_"
-
-    for recipient in NECKBAND_RECIPIENTS:
-        if send_whatsapp_alert(recipient, message):
-            print(f"Alert sent to {recipient}")
+    url = "https://notification-service-jn6cma3vvq-el.a.run.app/send-neckband-alert"
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        if response.status_code == 200:
+             print(f"Successfully sent notification: {response.text}")
         else:
-            print(f"Failed to send alert to {recipient}")
+             print(f"Failed to send notification: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"Error calling notification service: {e}")
 
 @router.post("/api/neckband/alerts")
 async def receive_neckband_alert(
@@ -97,6 +91,8 @@ async def receive_neckband_alert(
         resp = es.index(index=NECKBAND_INDEX, document=payload)
         doc_id = resp['_id']
         print(f"Neckband alert stored: {doc_id}")
+        #send notification to recipients
+        send_neckband_notifications(payload)
         
     except Exception as e:
         print(f"Error storing neckband alert: {e}")
