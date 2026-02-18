@@ -87,6 +87,12 @@ async def receive_neckband_alert(
         if "timestamp" not in payload:
             payload["timestamp"] = datetime.utcnow().isoformat()
             
+        # Replace 'Cow' with 'Buffalo' in message content
+        if payload.get("msg_title"):
+            payload["msg_title"] = payload["msg_title"].replace("Cow", "Buffalo")
+        if payload.get("msg_body"):
+            payload["msg_body"] = payload["msg_body"].replace("Cow", "Buffalo")
+            
         # Store in Elasticsearch
         resp = es.index(index=NECKBAND_INDEX, document=payload)
         doc_id = resp['_id']
