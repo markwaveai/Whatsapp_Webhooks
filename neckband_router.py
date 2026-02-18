@@ -55,7 +55,7 @@ def send_whatsapp_alert(target: str, text: str):
         return False
 
 def send_neckband_notifications(payload: dict):
-    url = "https://notification-service-jn6cma3vvq-el.a.run.app/send-neckband-alert"
+    url = os.getenv("NECKBAND_NOTIFICATION_URL")
     try:
         response = requests.post(url, json=payload, timeout=10)
         if response.status_code == 200:
