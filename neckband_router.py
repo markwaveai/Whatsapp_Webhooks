@@ -60,10 +60,12 @@ def send_neckband_notifications(payload: dict):
         response = requests.post(url, json=payload, timeout=10)
         if response.status_code == 200:
              print(f"Successfully sent notification: {response.text}")
+             return response.json()
         else:
              print(f"Failed to send notification: {response.status_code} - {response.text}")
     except Exception as e:
         print(f"Error calling notification service: {e}")
+    return None
 
 @router.post("/api/neckband/alerts")
 async def receive_neckband_alert(
@@ -98,8 +100,19 @@ async def receive_neckband_alert(
         doc_id = resp['_id']
         print(f"Neckband alert stored: {doc_id}")
         #send notification to recipients
-        send_neckband_notifications(payload)
-        
+        notif_result = send_neckband_notifications(payload)
+
+        # Update ES document with farm_id and shed_id from notification service
+        if notif_result:
+            update_fields = {}
+            if notif_result.get("farm_id"):
+                update_fields["farm_id"] = notif_result["farm_id"]
+            if notif_result.get("shed_id"):
+                update_fields["shed_id"] = notif_result["shed_id"]
+            if update_fields:
+                es.update(index=NECKBAND_INDEX, id=doc_id, doc=update_fields)
+                print(f"Updated ES doc {doc_id} with {update_fields}")
+
     except Exception as e:
         print(f"Error storing neckband alert: {e}")
         #raise HTTPException(status_code=500, detail="Failed to store alert")
