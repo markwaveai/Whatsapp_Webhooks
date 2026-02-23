@@ -26,6 +26,8 @@ TRUEHARVESTAPP = "trueharvest"
 ANIMALKARTAPP = "animalkart"
 FARMVESTAPP = "farmvest"
 
+META_OTP_API_TOKEN = os.getenv("META_OTP_API_TOKEN")
+
 APP_CONFIG = {
     ANIMALKARTAPP: {
         "token": os.getenv("META_ACCESS_TOKEN_ANIMALKART"),
@@ -420,8 +422,13 @@ def send_meta_whatsapp_otp(mobile: str, otp: str, app_name: str):
         print(f"Error sending Meta OTP: {str(e)}")
         return {"result": False, "message": str(e)}
 
+def verify_meta_otp_token(authorization: str = Header(...)):
+    expected = f"Bearer {META_OTP_API_TOKEN}"
+    if authorization != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
 @app.post("/send-meta-otp", response_model=WhatsAppOTPResponse)
-async def send_meta_otp_endpoint(request: SendMetaOTPRequest):
+async def send_meta_otp_endpoint(request: SendMetaOTPRequest, _: None = Depends(verify_meta_otp_token)):
     app_name = request.app_name.lower()
     if app_name not in APP_CONFIG:
         return WhatsAppOTPResponse(
