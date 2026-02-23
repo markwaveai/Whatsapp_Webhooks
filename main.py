@@ -50,6 +50,11 @@ class WhatsAppOTPRequest(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
 
+class SendMetaOTPRequest(BaseModel):
+    mobile: str
+    app_name: str
+    otp: str
+
 class WhatsAppOTPResponse(BaseModel):
     statuscode: int
     status: str
@@ -414,6 +419,34 @@ def send_meta_whatsapp_otp(mobile: str, otp: str, app_name: str):
     except Exception as e:
         print(f"Error sending Meta OTP: {str(e)}")
         return {"result": False, "message": str(e)}
+
+@app.post("/send-meta-otp", response_model=WhatsAppOTPResponse)
+async def send_meta_otp_endpoint(request: SendMetaOTPRequest):
+    app_name = request.app_name.lower()
+    if app_name not in APP_CONFIG:
+        return WhatsAppOTPResponse(
+            statuscode=400,
+            status="error",
+            message=f"Unsupported app: {app_name}",
+            user={}
+        )
+
+    result = send_meta_whatsapp_otp(request.mobile, request.otp, app_name)
+
+    if "error" in result:
+        return WhatsAppOTPResponse(
+            statuscode=500,
+            status="error",
+            message=f"Failed to send OTP: {result.get('error', {}).get('message', 'Unknown error')}",
+            user={}
+        )
+
+    return WhatsAppOTPResponse(
+        statuscode=200,
+        status="success",
+        message="OTP sent successfully",
+        user={"mobile": request.mobile, "appName": app_name}
+    )
 
 @app.post("/send-whatsapp-otp", response_model=WhatsAppOTPResponse)
 async def send_whatsapp_otp_endpoint(request: WhatsAppOTPRequest):
