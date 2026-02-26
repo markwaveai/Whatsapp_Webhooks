@@ -101,6 +101,7 @@ if not PERISKOPE_API_KEY or not PERISKOPE_ORG_PHONE:
 # Meta Webhook Config
 META_VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN", "markwave_verify_safe")
 META_APP_SECRET = os.getenv("META_APP_SECRET")
+SIGNING_SECRET = os.getenv("PERISKOPE_SIGNING_SECRET", "")
 
 # Auth Setup
 JWT_SECRET = os.getenv("JWT_SECRET", "supersecret")
