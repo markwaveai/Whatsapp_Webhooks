@@ -375,6 +375,10 @@ def bulk_fetch_and_cache_groups() -> dict:
 async def root():
     return {"message": "Webhook server is running"}
 
+@app.get("/debug-check")
+async def debug_check():
+    return {"status": "ok", "message": "The latest code with marketing templates is deployed!"}
+
 def send_meta_whatsapp_otp(mobile: str, otp: str, app_name: str):
     """
     Sends WhatsApp OTP using Meta Cloud API
