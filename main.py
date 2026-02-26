@@ -64,6 +64,13 @@ class WhatsAppOTPResponse(BaseModel):
     otp: Optional[str] = None
     user: Optional[Dict[str, Any]] = None
 
+class MarketingTemplateRequest(BaseModel):
+    mobile: str
+    app_name: str
+    template_name: str
+    header_image_url: Optional[str] = None
+    body_params: List[str]
+
 app = FastAPI()
 
 # Add CORS middleware
@@ -422,6 +429,70 @@ def send_meta_whatsapp_otp(mobile: str, otp: str, app_name: str):
         print(f"Error sending Meta OTP: {str(e)}")
         return {"result": False, "message": str(e)}
 
+def send_whatsapp_marketing_template(mobile: str, app_name: str, template_name: str, body_params: List[str], header_image_url: Optional[str] = None):
+    """
+    Sends a generic WhatsApp Marketing Template using Meta Cloud API
+    """
+    config = APP_CONFIG.get(app_name.lower())
+    if not config or not config["token"] or not config["phone_id"]:
+        print(f"Error: Credentials missing for app {app_name}")
+        return {"status": "error", "message": f"Credentials missing for {app_name}"}
+
+    token = config["token"]
+    phone_id = config["phone_id"]
+    
+    url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
+    
+    # Format phone number for International format without '+'
+    clean_mobile = re.sub(r'\D', '', mobile)
+    if len(clean_mobile) == 10:
+        clean_mobile = "91" + clean_mobile
+    
+    components = []
+    
+    # Add Header Image component if URL is provided
+    if header_image_url:
+        components.append({
+            "type": "header",
+            "parameters": [
+                {
+                    "type": "image",
+                    "image": {"link": header_image_url}
+                }
+            ]
+        })
+    
+    # Add Body parameters
+    if body_params:
+        body_parameters = [{"type": "text", "text": str(param)} for param in body_params]
+        components.append({
+            "type": "body",
+            "parameters": body_parameters
+        })
+    
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": clean_mobile,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": "en"},
+            "components": components
+        }
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        return response.json()
+    except Exception as e:
+        print(f"Error sending Meta Marketing Template: {str(e)}")
+        return {"result": False, "message": str(e)}
+
 def verify_meta_otp_token(authorization: str = Header(...)):
     expected = f"Bearer {META_OTP_API_TOKEN}"
     if authorization != expected:
@@ -489,6 +560,40 @@ async def send_whatsapp_otp_endpoint(request: WhatsAppOTPRequest):
         status="success",
         message="OTP sent successfully",
         otp=otp, # In prod, maybe don't return OTP in response body
+        user={"mobile": request.mobile, "appName": app_name}
+    )
+
+@app.post("/send-marketing-template", response_model=WhatsAppOTPResponse)
+async def send_marketing_template_endpoint(request: MarketingTemplateRequest, _: None = Depends(verify_meta_otp_token)):
+    app_name = request.app_name.lower()
+    if app_name not in APP_CONFIG:
+        return WhatsAppOTPResponse(
+            statuscode=400,
+            status="error",
+            message=f"Unsupported app: {app_name}",
+            user={}
+        )
+
+    result = send_whatsapp_marketing_template(
+        mobile=request.mobile,
+        app_name=app_name,
+        template_name=request.template_name,
+        body_params=request.body_params,
+        header_image_url=request.header_image_url
+    )
+
+    if "error" in result:
+        return WhatsAppOTPResponse(
+            statuscode=500,
+            status="error",
+            message=f"Failed to send template: {result.get('error', {}).get('message', 'Unknown error')}",
+            user={}
+        )
+
+    return WhatsAppOTPResponse(
+        statuscode=200,
+        status="success",
+        message="Marketing template sent successfully",
         user={"mobile": request.mobile, "appName": app_name}
     )
 
