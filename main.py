@@ -83,20 +83,30 @@ app.add_middleware(
 )
 
 
-# Periskope API setup
-from db_client import (
-    es, 
-    PERISKOPE_API_KEY, 
-    PERISKOPE_ORG_PHONE, 
-    PERISKOPE_API_BASE_URL,
-    ES_HOST, ES_USER, ES_PASSWORD,
-    INDEX_NAME, CACHE_INDEX, USERS_INDEX
-)
-import neckband_router
+print("[STARTUP] Step 1: Importing db_client...")
+try:
+    from db_client import (
+        es, 
+        PERISKOPE_API_KEY, 
+        PERISKOPE_ORG_PHONE, 
+        PERISKOPE_API_BASE_URL,
+        ES_HOST, ES_USER, ES_PASSWORD,
+        INDEX_NAME, CACHE_INDEX, USERS_INDEX
+    )
+    print("[STARTUP] Step 1: db_client OK")
+except Exception as _import_err:
+    print(f"[STARTUP] CRASH at db_client import: {_import_err}")
+    raise
 
-# Check if keys are loaded (optional, just for logging as in original)
-if not PERISKOPE_API_KEY or not PERISKOPE_ORG_PHONE:
-    print("WARNING: PERISKOPE_API_KEY or PERISKOPE_ORG_PHONE not set. Chat name enrichment will be disabled.")
+print("[STARTUP] Step 2: Importing neckband_router...")
+try:
+    import neckband_router
+    print("[STARTUP] Step 2: neckband_router OK")
+except Exception as _import_err:
+    print(f"[STARTUP] CRASH at neckband_router import: {_import_err}")
+    raise
+
+print("[STARTUP] Step 3: All imports OK, app is ready.")
 
 # Meta Webhook Config
 META_VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN", "markwave_verify_safe")
